@@ -1,5 +1,5 @@
 # puppet changes
-Puppet changes is a small api that polls puppetdb to look for recurring changes?
+Puppet changes is a small api that polls puppetdb to look for recurring changes.
 
 For now it just checks daily/hourly/weekly and continious changes. And prints them.
 Works on windows and linux. 
