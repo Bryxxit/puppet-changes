@@ -29,8 +29,8 @@ var cfgFile string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "puppet-changes",
-	Short: "AN api to look for recurring changes",
-	Long:  `Scans changes for hosts and displays if they are recurring.`,
+	Short: "A small cli to look for continious changes or get a history of changes",
+	Long:  `Scans changes for hosts and displays if they are recurring. Can also show a history of changes for all or single nodes.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
@@ -40,6 +40,9 @@ var rootCmd = &cobra.Command{
 		cert, _ := cmd.Flags().GetString("cert")
 		ca, _ := cmd.Flags().GetString("ca")
 		port, _ := cmd.Flags().GetInt("port")
+		history, _ := cmd.Flags().GetBool("history")
+		sWarns, _ := cmd.Flags().GetBool("show-warnings")
+		sErrors, _ := cmd.Flags().GetBool("show-errors")
 
 		master := Master{
 			Name:     "default",
@@ -56,19 +59,27 @@ var rootCmd = &cobra.Command{
 			master.SSL = true
 		}
 
-		if node == "" {
-			printALl(master)
+		if !history {
+			if node == "" {
+				GetContiniousChangesForAll(master, sWarns, sErrors)
+			} else {
+				GetContiniousChangesForNode(node, master, sWarns, sErrors)
+			}
 		} else {
-			FindContinuousChanges(node, master)
+			if node == "" {
+				GetHistoryForAll(master, sWarns, sErrors)
+			} else {
+				GetHistoryForNode(node, master, sWarns, sErrors)
+			}
 		}
 
 	},
 }
 
-func printALl(master Master) {
+func GetContiniousChangesForAll(master Master, sWarns bool, sErrors bool) {
 	names := GetCertNames(master)
 	for _, name := range names {
-		FindContinuousChanges(name, master)
+		GetContiniousChangesForNode(name, master, sWarns, sErrors)
 	}
 }
 
@@ -92,6 +103,9 @@ func init() {
 	rootCmd.Flags().StringP("key", "k", "", "The private key.")
 	rootCmd.Flags().StringP("cert", "c", "", "The certificate.")
 	rootCmd.Flags().StringP("ca", "C", "", "The ca certificate.")
+	rootCmd.Flags().BoolP("history", "r", false, "Show all changes by time.")
+	rootCmd.Flags().BoolP("show-warnings", "W", false, "Show the warnings as well.")
+	rootCmd.Flags().BoolP("show-errors", "E", false, "Show the errors as well.")
 
 }
 

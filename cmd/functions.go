@@ -35,6 +35,11 @@ type logEntry struct {
 	Message  string   `json:"message"`
 }
 
+type MessageTime struct {
+	Message string
+	Time    time.Time
+}
+
 func checkInterval(dates []time.Time, recurring int, interval int) bool {
 	c := dates[0]
 	for index, d := range dates {
@@ -49,7 +54,6 @@ func checkInterval(dates []time.Time, recurring int, interval int) bool {
 		}
 	}
 	return false
-
 }
 
 func checkIntervalHourly(dates []time.Time, recurring int, interval int) bool {
@@ -69,30 +73,107 @@ func checkIntervalHourly(dates []time.Time, recurring int, interval int) bool {
 
 }
 
-func FindContinuousChanges(certname string, master Master) {
-	reports := GetReportsForCertname(certname, master)
+func GetMessageTimesForNode(certname string, master Master, sWarns bool, sErrors bool) []MessageTime {
+	entries := GetLogEntryForNode(certname, master)
+	messageEntries := []MessageTime{}
+	if entries != nil {
+		for _, e := range *entries {
+			if !checkIsNoise(e, sWarns, sErrors) {
+				for _, d := range e.Time {
+					d2 := getTime(d)
+					if d2 != nil {
+						str := fmt.Sprintf("%s certname: %s message: %s %s %s", d2.String(), certname, e.Level, e.Source, e.Message)
+						m := MessageTime{
+							Message: str,
+							Time:    *d2,
+						}
+						messageEntries = append(messageEntries, m)
+					}
+				}
+			}
+		}
+	}
+
+	sort.Slice(messageEntries, func(i, j int) bool {
+		return messageEntries[i].Time.Before(messageEntries[j].Time)
+	})
+	return messageEntries
+}
+
+func GetHistoryForNode(certname string, master Master, sWarns bool, sErrors bool) {
+	messageEntries := GetMessageTimesForNode(certname, master, sWarns, sErrors)
+
+	for _, change := range messageEntries {
+		fmt.Println(change.Message)
+	}
+
+}
+
+func GetHistoryForAll(master Master, sWarns bool, sErrors bool) {
+	certnames := GetCertNames(master)
+	messageEntries := []MessageTime{}
+	for _, c := range certnames {
+		messageEntries = append(messageEntries, GetMessageTimesForNode(c, master, sWarns, sErrors)...)
+
+	}
+	sort.Slice(messageEntries, func(i, j int) bool {
+		return messageEntries[i].Time.Before(messageEntries[j].Time)
+	})
+	for _, change := range messageEntries {
+		fmt.Println(change.Message)
+	}
+
+}
+
+func checkIsNoise(e logEntry, sWarns bool, sErrors bool) bool {
+	if e.Message == "Applied catalog in x seconds" {
+		return true
+	}
+	if e.Level == "info" && e.Source == "Puppet" {
+		return true
+
+	}
+	if !sWarns && e.Level == "warning" {
+		return true
+	}
+	if !sErrors && e.Level == "err" {
+		return true
+	}
+
+	return false
+}
+
+func GetLogEntryForNode(certname string, master Master) *[]logEntry {
 	entries := &[]logEntry{}
+	reports := GetReportsForCertname(certname, master)
 	for _, r := range reports {
 		for _, l := range r.Logs.Data {
 			e := pupDbEntryToLogEntry(l)
 			AppendToLogEntries(entries, e)
 		}
 	}
-	check := false
-	for _, e := range *entries {
-		if e.Message != "Applied catalog in x seconds" {
-			pattern := seePatern(e.Time)
-			if pattern != "" {
-				check = true
-				str := fmt.Sprintf("certname: %s | message: %s %s %s | pattern: %s",
-					certname, e.Level, e.Source, e.Message, pattern)
-				fmt.Println(str)
+	return entries
+}
+
+func GetContiniousChangesForNode(certname string, master Master, sWarns bool, sErrors bool) {
+	entries := GetLogEntryForNode(certname, master)
+	if entries != nil {
+		check := false
+		for _, e := range *entries {
+			if !checkIsNoise(e, sWarns, sErrors) {
+				pattern := seePatern(e.Time)
+				if pattern != "" {
+					check = true
+					str := fmt.Sprintf("certname: %s | message: %s %s %s | pattern: %s",
+						certname, e.Level, e.Source, e.Message, pattern)
+					fmt.Println(str)
+				}
 			}
 		}
-	}
-	if !check {
-		str := fmt.Sprintf("certname: %s | not recurring changes found", certname)
-		fmt.Println(str)
+		if !check {
+			str := fmt.Sprintf("certname: %s | not recurring changes found", certname)
+			fmt.Println(str)
+		}
 	}
 
 }
@@ -123,9 +204,12 @@ func seePatern(times []string) string {
 		}
 	}
 	if checkLogEntryAge(dates[0]) {
-		if checkDatesAreNextLoop(dates[1], dates[0]) && checkDatesAreNextLoop(dates[2], dates[1]) {
-			return "continious"
+		if len(dates) >= 2 {
+			if checkDatesAreNextLoop(dates[1], dates[0]) && checkDatesAreNextLoop(dates[2], dates[1]) {
+				return "continious"
+			}
 		}
+
 	}
 
 	if len(dates) > 1 {
